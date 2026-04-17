@@ -1,4 +1,4 @@
-﻿using DaoPlanImport.Data;
+using DaoPlanImport.Data;
 using DaoPlanImport.Services;
 using DaoPlanImport.Utilities;
 using Microsoft.EntityFrameworkCore;
@@ -39,16 +39,31 @@ services.AddScoped<IDataMapperService, DataMapperService>();
 services.AddScoped<IDatabaseService, DatabaseService>();
 services.AddScoped<MigrationHelper>();
 
-// Build service provider
-var serviceProvider = services.BuildServiceProvider();
-
 // Get configuration values
-var baseFolderPath = configuration["Settings:BaseFolderPath"] ?? "./West_12_till_19/";
-var extractedFolderPath = configuration["Settings:ExtractedFolderPath"] ?? "./Extracted/";
+var baseFolderPath = configuration["Settings:BaseFolderPath"] ?? "West_12_till_19";
+var extractedFolderPath = configuration["Settings:ExtractedFolderPath"] ?? "Extracted";
 var batchSize = int.Parse(configuration["Settings:BatchSize"] ?? "500");
 var deleteExtractedAfterProcessing = bool.Parse(configuration["Settings:DeleteExtractedAfterProcessing"] ?? "false");
 
-// Register ImportService with configuration
+// Convert relative paths to absolute paths based on solution root
+// AppContext.BaseDirectory = bin\Debug\net8.0\
+// We need to go up 5 levels to get to solution root where West_12_till_19 is located
+var appBaseDirectory = AppContext.BaseDirectory;
+var projectRoot = Directory.GetParent(appBaseDirectory)?.Parent?.Parent?.Parent?.Parent?.FullName 
+    ?? AppContext.BaseDirectory;
+
+var absoluteBaseFolderPath = Path.IsPathRooted(baseFolderPath) 
+    ? baseFolderPath 
+    : Path.Combine(projectRoot, baseFolderPath);
+var absoluteExtractedFolderPath = Path.IsPathRooted(extractedFolderPath)
+    ? extractedFolderPath
+    : Path.Combine(projectRoot, extractedFolderPath);
+
+// Normalize paths
+absoluteBaseFolderPath = Path.GetFullPath(absoluteBaseFolderPath);
+absoluteExtractedFolderPath = Path.GetFullPath(absoluteExtractedFolderPath);
+
+// Register ImportService with configuration BEFORE building service provider
 services.AddScoped<IImportService>(provider =>
     new ImportService(
         provider.GetRequiredService<IZipExtractorService>(),
@@ -57,12 +72,15 @@ services.AddScoped<IImportService>(provider =>
         provider.GetRequiredService<IDataMapperService>(),
         provider.GetRequiredService<IDatabaseService>(),
         provider.GetRequiredService<ILogger<ImportService>>(),
-        baseFolderPath,
-        extractedFolderPath,
+        absoluteBaseFolderPath,
+        absoluteExtractedFolderPath,
         batchSize,
         deleteExtractedAfterProcessing
     )
 );
+
+// Build service provider
+var serviceProvider = services.BuildServiceProvider();
 
 // Create a new scope for initialization and import
 using (var scope = serviceProvider.CreateScope())
@@ -96,11 +114,13 @@ using (var scope = serviceProvider.CreateScope())
 
         logger.LogInformation("Database initialized successfully");
 
-        // Run import service (optional - comment out if only want to set up database)
-        // var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
-        // await importService.ProcessAllDataAsync();
+        // Run import service
+        logger.LogInformation("Starting CSV import service");
+        var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
+        await importService.ProcessAllDataAsync();
 
         logger.LogInformation("Application completed successfully");
+        Console.ReadLine();
     }
     catch (Exception ex)
     {
