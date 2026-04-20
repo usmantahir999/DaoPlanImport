@@ -11,6 +11,7 @@ public interface IDataMapperService
 public class DataMapperService : IDataMapperService
 {
     private readonly ILogger<DataMapperService> _logger;
+    private Dictionary<string, string>? _keyMapping;
 
     public DataMapperService(ILogger<DataMapperService> logger)
     {
@@ -21,10 +22,10 @@ public class DataMapperService : IDataMapperService
     {
         try
         {
-            // Log available keys for first record of each file to diagnose header issues
-            if (record.Count > 0)
+            // Initialize key mapping once on first record for fast lookups
+            if (_keyMapping == null && record.Count > 0)
             {
-                _logger.LogDebug("Available CSV keys: {Keys}", string.Join(", ", record.Keys));
+                _keyMapping = BuildKeyMapping(record);
             }
 
             return new Liga
@@ -105,33 +106,31 @@ public class DataMapperService : IDataMapperService
 
     private string? GetStringValue(Dictionary<string, object?> record, string key)
     {
-        // Try exact match first
+        // Try exact match first (fastest path)
         if (record.TryGetValue(key, out var value))
         {
-            var result = value?.ToString();
-            if (!string.IsNullOrEmpty(result))
-            {
-                _logger.LogDebug("Found value for key '{Key}': '{Value}'", key, result);
-            }
-            return result;
+            return value?.ToString();
         }
 
-        // Try case-insensitive match
-        var caseInsensitiveKey = record.Keys.FirstOrDefault(k => 
-            k.Equals(key, StringComparison.OrdinalIgnoreCase));
-        
-        if (caseInsensitiveKey != null && record.TryGetValue(caseInsensitiveKey, out var caseInsensitiveValue))
+        // Try cached mapping for case-insensitive match
+        if (_keyMapping != null && _keyMapping.TryGetValue(key, out var mappedKey))
         {
-            var result = caseInsensitiveValue?.ToString();
-            if (!string.IsNullOrEmpty(result))
+            if (record.TryGetValue(mappedKey, out var mappedValue))
             {
-                _logger.LogDebug("Found case-insensitive match for key '{Key}' (actual: '{ActualKey}'): '{Value}'", 
-                    key, caseInsensitiveKey, result);
+                return mappedValue?.ToString();
             }
-            return result;
         }
 
-        _logger.LogDebug("Key '{Key}' not found in record", key);
         return null;
+    }
+
+    private Dictionary<string, string> BuildKeyMapping(Dictionary<string, object?> record)
+    {
+        var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in record.Keys)
+        {
+            mapping[key] = key;
+        }
+        return mapping;
     }
 }

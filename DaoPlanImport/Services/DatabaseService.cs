@@ -25,20 +25,19 @@ public class DatabaseService : IDatabaseService
     public async Task InsertBatchAsync<T>(IEnumerable<T> entities, int batchSize) where T : class
     {
         var batch = new List<T>(batchSize);
-        var count = 0;
+        var totalCount = 0;
 
         foreach (var entity in entities)
         {
             batch.Add(entity);
-            count++;
 
             if (batch.Count >= batchSize)
             {
                 try
                 {
+                    totalCount += batch.Count;
                     _context.Set<T>().AddRange(batch);
                     await _context.SaveChangesAsync();
-                    _logger.LogDebug("Batch of {Count} {EntityType} records inserted", batch.Count, typeof(T).Name);
                     batch.Clear();
                 }
                 catch (Exception ex)
@@ -49,13 +48,14 @@ public class DatabaseService : IDatabaseService
             }
         }
 
+        // Insert remaining records
         if (batch.Count > 0)
         {
             try
             {
+                totalCount += batch.Count;
                 _context.Set<T>().AddRange(batch);
                 await _context.SaveChangesAsync();
-                _logger.LogDebug("Final batch of {Count} {EntityType} records inserted", batch.Count, typeof(T).Name);
             }
             catch (Exception ex)
             {
@@ -63,8 +63,6 @@ public class DatabaseService : IDatabaseService
                 throw;
             }
         }
-
-        _logger.LogInformation("Total {Count} {EntityType} records inserted", count, typeof(T).Name);
     }
 
     public async Task SaveChangesAsync()

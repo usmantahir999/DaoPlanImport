@@ -38,12 +38,6 @@ public class CsvReaderService : ICsvReaderService
         await csv.ReadAsync();
         csv.ReadHeader();
 
-        var headerRecord = csv.HeaderRecord;
-        if (headerRecord != null)
-        {
-            _logger.LogInformation("CSV Headers: {Headers}", string.Join(", ", headerRecord.Select(h => $"'{h}'")));
-        }
-
         var rowCount = 0;
         while (await csv.ReadAsync())
         {
@@ -67,10 +61,6 @@ public class CsvReaderService : ICsvReaderService
                     }
                 }
                 rowCount++;
-                if (rowCount == 1)
-                {
-                    _logger.LogInformation("First record values: {Values}", string.Join(", ", record.Select(kvp => $"{kvp.Key}='{kvp.Value}'")));
-                }
             }
             catch (Exception ex)
             {

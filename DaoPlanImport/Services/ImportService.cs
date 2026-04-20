@@ -127,38 +127,35 @@ public class ImportService : IImportService
         var recordCount = 0;
 
         await foreach (var record in _csvReader.ReadCsvAsync(csvFilePath))
-        {
-            try
             {
-                var liga = _dataMapper.MapToLiga(record, fileName);
-                if (liga == null)
+                try
                 {
-                    _logger.LogWarning("Failed to map Liga record from {FileName}", fileName);
-                    continue;
+                    var liga = _dataMapper.MapToLiga(record, fileName);
+                    if (liga == null)
+                    {
+                        continue;
+                    }
+
+                    ligaRecords.Add(liga);
+                    recordCount++;
+
+                    // Insert batch when reaching batch size
+                    if (ligaRecords.Count >= _batchSize)
+                    {
+                        await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
+                        ligaRecords.Clear();
+                    }
                 }
-
-                ligaRecords.Add(liga);
-                recordCount++;
-
-                // Insert batch when reaching batch size
-                if (ligaRecords.Count >= _batchSize)
+                catch (Exception ex)
                 {
-                    await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
-                    _logger.LogInformation("Inserted batch of {Count} records from {FileName}", ligaRecords.Count, fileName);
-                    ligaRecords.Clear();
+                    _logger.LogError(ex, "Error processing record from file: {FileName}", fileName);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing record from file: {FileName}", fileName);
-            }
-        }
 
         // Insert remaining records
         if (ligaRecords.Count > 0)
         {
             await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
-            _logger.LogDebug("Inserted final batch of {Count} records from {FileName}", ligaRecords.Count, fileName);
         }
 
         _logger.LogInformation("Processed {RecordCount} records from {FileName}", recordCount, fileName);
