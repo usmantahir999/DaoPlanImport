@@ -121,10 +121,13 @@ public class ImportService : IImportService
     private async Task ProcessCsvFileAsync(string csvFilePath)
     {
         var fileName = Path.GetFileName(csvFilePath);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        
         _logger.LogInformation("Processing CSV file: {FileName}", fileName);
 
         var ligaRecords = new List<Liga>();
         var recordCount = 0;
+        var csvReadTime = System.Diagnostics.Stopwatch.StartNew();
 
         await foreach (var record in _csvReader.ReadCsvAsync(csvFilePath))
             {
@@ -142,8 +145,17 @@ public class ImportService : IImportService
                     // Insert batch when reaching batch size
                     if (ligaRecords.Count >= _batchSize)
                     {
+                        csvReadTime.Stop();
+                        var dbInsertTime = System.Diagnostics.Stopwatch.StartNew();
+                        
                         await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
+                        
+                        dbInsertTime.Stop();
+                        _logger.LogInformation("Batch {RecordCount}: CSV read {CsvMs}ms, DB insert {DbMs}ms", 
+                            recordCount, csvReadTime.ElapsedMilliseconds, dbInsertTime.ElapsedMilliseconds);
+                        
                         ligaRecords.Clear();
+                        csvReadTime = System.Diagnostics.Stopwatch.StartNew();
                     }
                 }
                 catch (Exception ex)
@@ -158,6 +170,8 @@ public class ImportService : IImportService
             await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
         }
 
-        _logger.LogInformation("Processed {RecordCount} records from {FileName}", recordCount, fileName);
+        stopwatch.Stop();
+        _logger.LogInformation("Processed {RecordCount} records from {FileName} in {Elapsed}ms", 
+            recordCount, fileName, stopwatch.ElapsedMilliseconds);
     }
 }
