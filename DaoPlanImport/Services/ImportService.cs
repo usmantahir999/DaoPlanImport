@@ -144,7 +144,7 @@ public class ImportService : IImportService
                 if (ligaRecords.Count >= _batchSize)
                 {
                     await _databaseService.InsertBatchAsync(ligaRecords, _batchSize);
-                    _logger.LogDebug("Inserted batch of {Count} records from {FileName}", ligaRecords.Count, fileName);
+                    _logger.LogInformation("Inserted batch of {Count} records from {FileName}", ligaRecords.Count, fileName);
                     ligaRecords.Clear();
                 }
             }

@@ -28,7 +28,7 @@ services.AddLogging(config =>
 {
     config.ClearProviders();
     config.AddConsole();
-    config.SetMinimumLevel(LogLevel.Debug);
+    config.SetMinimumLevel(LogLevel.Information);
 });
 
 // Add services
