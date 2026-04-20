@@ -29,6 +29,9 @@ services.AddLogging(config =>
     config.ClearProviders();
     config.AddConsole();
     config.SetMinimumLevel(LogLevel.Information);
+    // Disable verbose EF Core SQL logging
+    config.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+    config.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 });
 
 // Add services
