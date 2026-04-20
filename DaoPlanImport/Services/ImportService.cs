@@ -1,5 +1,6 @@
 using DaoPlanImport.Entities;
 using Microsoft.Extensions.Logging;
+using System.Xml.Schema;
 
 namespace DaoPlanImport.Services;
 
@@ -104,7 +105,7 @@ public class ImportService : IImportService
         try
         {
             // Process all CSV files and dump them into Liga table with FileName segregation
-            foreach (var csvFile in csvFiles)
+            foreach (var csvFile in csvFiles.Where(x=>x.Contains("_Liga")))
             {
                 await ProcessCsvFileAsync(csvFile);
             }

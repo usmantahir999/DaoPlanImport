@@ -21,6 +21,12 @@ public class DataMapperService : IDataMapperService
     {
         try
         {
+            // Log available keys for first record of each file to diagnose header issues
+            if (record.Count > 0)
+            {
+                _logger.LogDebug("Available CSV keys: {Keys}", string.Join(", ", record.Keys));
+            }
+
             return new Liga
             {
                 FileName = fileName,
@@ -97,12 +103,35 @@ public class DataMapperService : IDataMapperService
         }
     }
 
-    private static string? GetStringValue(Dictionary<string, object?> record, string key)
+    private string? GetStringValue(Dictionary<string, object?> record, string key)
     {
+        // Try exact match first
         if (record.TryGetValue(key, out var value))
         {
-            return value?.ToString();
+            var result = value?.ToString();
+            if (!string.IsNullOrEmpty(result))
+            {
+                _logger.LogDebug("Found value for key '{Key}': '{Value}'", key, result);
+            }
+            return result;
         }
+
+        // Try case-insensitive match
+        var caseInsensitiveKey = record.Keys.FirstOrDefault(k => 
+            k.Equals(key, StringComparison.OrdinalIgnoreCase));
+        
+        if (caseInsensitiveKey != null && record.TryGetValue(caseInsensitiveKey, out var caseInsensitiveValue))
+        {
+            var result = caseInsensitiveValue?.ToString();
+            if (!string.IsNullOrEmpty(result))
+            {
+                _logger.LogDebug("Found case-insensitive match for key '{Key}' (actual: '{ActualKey}'): '{Value}'", 
+                    key, caseInsensitiveKey, result);
+            }
+            return result;
+        }
+
+        _logger.LogDebug("Key '{Key}' not found in record", key);
         return null;
     }
 }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using CsvHelper;
+using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace DaoPlanImport.Services;
@@ -27,11 +28,22 @@ public class CsvReaderService : ICsvReaderService
         }
 
         using var reader = new StreamReader(filePath);
-        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            Delimiter = ";"
+        };
+        using var csv = new CsvReader(reader, config);
         
         await csv.ReadAsync();
         csv.ReadHeader();
 
+        var headerRecord = csv.HeaderRecord;
+        if (headerRecord != null)
+        {
+            _logger.LogInformation("CSV Headers: {Headers}", string.Join(", ", headerRecord.Select(h => $"'{h}'")));
+        }
+
+        var rowCount = 0;
         while (await csv.ReadAsync())
         {
             Dictionary<string, object?> record;
@@ -42,13 +54,21 @@ public class CsvReaderService : ICsvReaderService
                 {
                     try
                     {
-                        record[header] = csv.GetField(header);
+                        // Trim header to handle whitespace in column names
+                        var trimmedHeader = header?.Trim() ?? string.Empty;
+                        var fieldValue = csv.GetField(header);
+                        record[trimmedHeader] = fieldValue;
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error reading field '{Header}' from CSV file: {FilePath}", header, filePath);
-                        record[header] = null;
+                        record[header?.Trim() ?? string.Empty] = null;
                     }
+                }
+                rowCount++;
+                if (rowCount == 1)
+                {
+                    _logger.LogInformation("First record values: {Values}", string.Join(", ", record.Select(kvp => $"{kvp.Key}='{kvp.Value}'")));
                 }
             }
             catch (Exception ex)
