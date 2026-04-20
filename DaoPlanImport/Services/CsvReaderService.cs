@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,7 @@ public class CsvReaderService : ICsvReaderService
             yield break;
         }
 
-        using var reader = new StreamReader(filePath);
+        using var reader = new StreamReader(filePath, Encoding.GetEncoding("ISO-8859-1"));
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             Delimiter = ";"
