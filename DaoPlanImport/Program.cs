@@ -41,6 +41,8 @@ services.AddScoped<IFileProcessorService, FileProcessorService>();
 services.AddScoped<ICsvReaderService, CsvReaderService>();
 services.AddScoped<IDataMapperService, DataMapperService>();
 services.AddScoped<IDatabaseService, DatabaseService>();
+services.AddScoped<ShapeManagementService>();
+services.AddScoped<IJobPolygonService, JobPolygonService>();
 services.AddScoped<MigrationHelper>();
 
 // Get configuration values
@@ -122,9 +124,17 @@ using (var scope = serviceProvider.CreateScope())
         logger.LogInformation("Starting CSV import service");
         var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
         Stopwatch stopwatch = Stopwatch.StartNew();
-        await importService.ProcessAllDataAsync();
+        //await importService.ProcessAllDataAsync();
         stopwatch.Stop();       
-        Console.WriteLine($"Total processing time: {stopwatch.Elapsed.TotalSeconds} seconds");
+        Console.WriteLine($"Total CSV import time: {stopwatch.Elapsed.TotalSeconds:F2} seconds");
+
+        // Generate job polygons from imported data
+        logger.LogInformation("Starting job polygon generation");
+        var polygonService = scope.ServiceProvider.GetRequiredService<IJobPolygonService>();
+        Stopwatch polygonStopwatch = Stopwatch.StartNew();
+        await polygonService.GenerateJobPolygonsAsync();
+        polygonStopwatch.Stop();
+        Console.WriteLine($"Total polygon generation time: {polygonStopwatch.Elapsed.TotalSeconds:F2} seconds");
 
         logger.LogInformation("Application completed successfully");
         Console.ReadLine();

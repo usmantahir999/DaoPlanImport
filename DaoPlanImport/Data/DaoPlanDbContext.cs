@@ -10,6 +10,7 @@ public class DaoPlanDbContext : DbContext
     }
 
     public DbSet<Liga> Ligas { get; set; } = null!;
+    public DbSet<JobPolygon> JobPolygons { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,5 +31,18 @@ public class DaoPlanDbContext : DbContext
         // Create composite index for common queries
         modelBuilder.Entity<Liga>()
             .HasIndex(x => new { x.FileName, x.ImportDate });
+
+        // Configure JobPolygon table
+        modelBuilder.Entity<JobPolygon>()
+            .HasKey(x => x.Id);
+
+        // Create composite index on DiomNr and JobNr for quick lookup
+        modelBuilder.Entity<JobPolygon>()
+            .HasIndex(x => new { x.DiomNr, x.JobNr })
+            .IsUnique();
+
+        // Create index on CreatedDate
+        modelBuilder.Entity<JobPolygon>()
+            .HasIndex(x => x.CreatedDate);
     }
 }
