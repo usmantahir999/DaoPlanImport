@@ -4,6 +4,7 @@ using DaoPlanImport.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Algorithm.Hull;
+using NetTopologySuite.IO;
 using System.Globalization;
 
 public interface IJobPolygonService
@@ -168,7 +169,7 @@ public class JobPolygonService : IJobPolygonService
              smaller = tighter boundary
              bigger  = looser boundary
             */
-            concaveHull.MaximumEdgeLength = 0.002;
+            concaveHull.MaximumEdgeLength = 0.0012;
 
             var hullGeometry =
                 concaveHull.GetHull();
@@ -179,14 +180,32 @@ public class JobPolygonService : IJobPolygonService
                 return null;
             }
 
-            var polygonWkt =
-                hullGeometry.AsText();
+            //var polygonWkt =
+            //    hullGeometry.AsText();
+            var writer = new GeoJsonWriter();
+
+            var geoJsonGeometry =
+                writer.Write(hullGeometry);
+
+            var polygonGeoJson =
+            $@"{{
+              ""type"": ""FeatureCollection"",
+              ""features"": [
+                {{
+                  ""type"": ""Feature"",
+                  ""properties"": {{
+                    ""jobNr"": ""{jobNr}""
+                  }},
+                  ""geometry"": {geoJsonGeometry}
+                }}
+              ]
+            }}";
 
             return new JobPolygon
             {
                 DiomNr = diomNr,
                 JobNr = jobNr,
-                Polygon = polygonWkt,
+                Polygon = polygonGeoJson,
                 CreatedDate = DateTime.UtcNow,
                 LocationCount = locations.Count
             };
