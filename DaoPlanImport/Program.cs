@@ -41,7 +41,6 @@ services.AddScoped<IFileProcessorService, FileProcessorService>();
 services.AddScoped<ICsvReaderService, CsvReaderService>();
 services.AddScoped<IDataMapperService, DataMapperService>();
 services.AddScoped<IDatabaseService, DatabaseService>();
-services.AddScoped<ShapeManagementService>();
 services.AddScoped<IJobPolygonService, JobPolygonService>();
 services.AddScoped<MigrationHelper>();
 

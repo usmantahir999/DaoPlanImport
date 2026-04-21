@@ -3,31 +3,26 @@ using DaoPlanImport.Entities;
 using DaoPlanImport.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-
-namespace DaoPlanImport.Services;
+using NetTopologySuite.Algorithm.Hull;
+using System.Globalization;
 
 public interface IJobPolygonService
 {
     Task GenerateJobPolygonsAsync();
 }
-
-/// <summary>
-/// Service for generating job polygons from Liga data
-/// Filters valid records, groups by job/district, and computes alpha shapes
-/// </summary>
 public class JobPolygonService : IJobPolygonService
 {
+    private static readonly CultureInfo DanishCulture =
+        CultureInfo.GetCultureInfo("da-DK");
+
     private readonly DaoPlanDbContext _context;
-    private readonly ShapeManagementService _shapeManagement;
     private readonly ILogger<JobPolygonService> _logger;
 
     public JobPolygonService(
         DaoPlanDbContext context,
-        ShapeManagementService shapeManagement,
         ILogger<JobPolygonService> logger)
     {
         _context = context;
-        _shapeManagement = shapeManagement;
         _logger = logger;
     }
 
@@ -37,19 +32,15 @@ public class JobPolygonService : IJobPolygonService
         {
             _logger.LogInformation("Starting job polygon generation");
 
-            // Get all valid Liga records
             var validRecords = await GetValidRecordsAsync();
-            _logger.LogInformation("Found {Count} valid Liga records", validRecords.Count);
 
-            // Group by DiomNr and JobNr
             var groupedByJob = validRecords
                 .GroupBy(r => new { r.DIOMNR, r.JOBNR })
+                // remove this filter when done debugging
+                .Where(x => x.Key.JOBNR == "B83701")
                 .ToList();
 
-            _logger.LogInformation("Found {Count} unique job/district combinations", groupedByJob.Count);
-
             var polygons = new List<JobPolygon>();
-            var processedCount = 0;
 
             foreach (var jobGroup in groupedByJob)
             {
@@ -61,180 +52,230 @@ public class JobPolygonService : IJobPolygonService
                         jobGroup.ToList());
 
                     if (polygon != null)
-                    {
                         polygons.Add(polygon);
-                        processedCount++;
-                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error generating polygon for job {JobNr}/{DiomNr}",
-                        jobGroup.Key.JOBNR, jobGroup.Key.DIOMNR);
+                    _logger.LogError(ex,
+                        "Error generating polygon for {JobNr}/{DiomNr}",
+                        jobGroup.Key.JOBNR,
+                        jobGroup.Key.DIOMNR);
                 }
             }
 
-            // Save all polygons to database
             if (polygons.Count > 0)
-            {
                 await SavePolygonsAsync(polygons);
-            }
-
-            _logger.LogInformation("Job polygon generation completed. Generated {Count} polygons",
-                processedCount);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during job polygon generation");
+            _logger.LogError(ex,
+                "Error during job polygon generation");
             throw;
         }
     }
 
-    /// <summary>
-    /// Get all valid Liga records (filtering out records with invalid LAT/LONG, JobNr, or DiomNr)
-    /// </summary>
     private async Task<List<Liga>> GetValidRecordsAsync()
     {
-        return await _context.Ligas
+        return await _context.Ligas.Where(x => x.JOBNR == "B83701")
             .Where(l =>
-                // Must have valid DiomNr
                 !string.IsNullOrWhiteSpace(l.DIOMNR) &&
-                // Must have valid JobNr
                 !string.IsNullOrWhiteSpace(l.JOBNR) &&
-                // Must have valid LAT (not null, not "0", not empty)
-                l.LAT != null && l.LAT != "" && l.LAT != "0" &&
-                // Must have valid LONG (not null, not "0", not empty)
-                l.LONG != null && l.LONG != "" && l.LONG != "0")
+                l.LAT != null &&
+                l.LAT != "" &&
+                l.LAT != "0" &&
+                l.LONG != null &&
+                l.LONG != "" &&
+                l.LONG != "0")
             .ToListAsync();
     }
 
-    /// <summary>
-    /// Generate a single polygon for a job/district combination
-    /// </summary>
     private async Task<JobPolygon?> GeneratePolygonForJobAsync(
-        string? diomNr,
-        string? jobNr,
-        List<Liga> records)
+    string? diomNr,
+    string? jobNr,
+    List<Liga> records)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(diomNr) || string.IsNullOrWhiteSpace(jobNr))
+            if (string.IsNullOrWhiteSpace(diomNr) ||
+                string.IsNullOrWhiteSpace(jobNr))
                 return null;
 
             if (records.Count < 3)
-            {
-                _logger.LogWarning("Insufficient records for polygon (need at least 3): {JobNr}/{DiomNr}",
-                    jobNr, diomNr);
                 return null;
-            }
 
-            // Extract unique locations
+            // Parse + distinct coordinates
             var locations = records
-                .Where(r => TryParseCoordinates(r.LAT, r.LONG, out var lat, out var lon))
+                .Where(r =>
+                    TryParseCoordinates(
+                        r.LAT,
+                        r.LONG,
+                        out _,
+                        out _))
                 .Select(r =>
                 {
-                    TryParseCoordinates(r.LAT, r.LONG, out var lat, out var lon);
-                    return new GeoLocation { Latitude = lat, Longitude = lon };
+                    TryParseCoordinates(
+                        r.LAT,
+                        r.LONG,
+                        out var lat,
+                        out var lon);
+
+                    return new
+                    {
+                        Lat = Math.Round(lat, 8),
+                        Lon = Math.Round(lon, 8)
+                    };
                 })
                 .Distinct()
+                .Select(x => new GeoLocation
+                {
+                    Latitude = x.Lat,
+                    Longitude = x.Lon
+                })
                 .ToList();
 
             if (locations.Count < 3)
+                return null;
+
+            _logger.LogInformation(
+                "Using {Count} unique points for {JobNr}",
+                locations.Count,
+                jobNr);
+
+            var geometryFactory =
+                NetTopologySuite.NtsGeometryServices.Instance
+                    .CreateGeometryFactory(
+                        srid: 4326);
+
+            var coordinates = locations
+                .Select(x =>
+                    new NetTopologySuite.Geometries.Coordinate(
+                        x.Longitude, // X
+                        x.Latitude)) // Y
+                .ToArray();
+
+            var multiPoint =
+                geometryFactory
+                    .CreateMultiPointFromCoords(
+                        coordinates);
+
+            // Concave Hull
+            var concaveHull =
+                new ConcaveHull(
+                    multiPoint);
+
+            /*
+             Tune this:
+             smaller = tighter boundary
+             bigger  = looser boundary
+            */
+            concaveHull.MaximumEdgeLength = 0.002;
+
+            var hullGeometry =
+                concaveHull.GetHull();
+
+            if (hullGeometry == null ||
+                hullGeometry.IsEmpty)
             {
-                _logger.LogWarning("Insufficient unique locations for polygon: {JobNr}/{DiomNr}",
-                    jobNr, diomNr);
                 return null;
             }
 
-            // Compute alpha shape
-            var shapes = _shapeManagement.GetAlphaShape(locations);
+            var polygonWkt =
+                hullGeometry.AsText();
 
-            if (shapes == null || shapes.Count == 0)
-            {
-                _logger.LogWarning("Failed to compute alpha shape for job: {JobNr}/{DiomNr}",
-                    jobNr, diomNr);
-                return null;
-            }
-
-            // Use the first (largest) polygon
-            var mainShape = shapes.First();
-            var wktPolygon = GeometryCalculator.LocationsToWktPolygon(mainShape.Locations);
-
-            if (string.IsNullOrWhiteSpace(wktPolygon))
-            {
-                _logger.LogWarning("Failed to convert polygon to WKT format: {JobNr}/{DiomNr}",
-                    jobNr, diomNr);
-                return null;
-            }
-
-            var jobPolygon = new JobPolygon
+            return new JobPolygon
             {
                 DiomNr = diomNr,
                 JobNr = jobNr,
-                Polygon = wktPolygon,
+                Polygon = polygonWkt,
                 CreatedDate = DateTime.UtcNow,
                 LocationCount = locations.Count
             };
-
-            _logger.LogInformation("Generated polygon for job {JobNr}/{DiomNr} with {LocationCount} locations",
-                jobNr, diomNr, locations.Count);
-
-            return jobPolygon;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error generating polygon for job {JobNr}/{DiomNr}",
-                jobNr, diomNr);
+            _logger.LogError(
+                ex,
+                "Error generating polygon for {JobNr}/{DiomNr}",
+                jobNr,
+                diomNr);
+
             return null;
         }
     }
 
-    /// <summary>
-    /// Try to parse latitude and longitude from string values
-    /// </summary>
-    private bool TryParseCoordinates(string? latStr, string? lonStr, out double lat, out double lon)
+    private bool TryParseCoordinates(
+        string? latStr,
+        string? lonStr,
+        out double lat,
+        out double lon)
     {
         lat = 0;
         lon = 0;
 
-        if (string.IsNullOrWhiteSpace(latStr) || string.IsNullOrWhiteSpace(lonStr))
+        if (string.IsNullOrWhiteSpace(latStr) ||
+            string.IsNullOrWhiteSpace(lonStr))
             return false;
 
-        if (!double.TryParse(latStr, out lat) || !double.TryParse(lonStr, out lon))
+        latStr = latStr.Trim();
+        lonStr = lonStr.Trim();
+
+        if (!double.TryParse(
+                latStr,
+                NumberStyles.Float,
+                DanishCulture,
+                out lat))
+        {
+            if (!double.TryParse(
+                    latStr.Replace(',', '.'),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out lat))
+                return false;
+        }
+
+        if (!double.TryParse(
+                lonStr,
+                NumberStyles.Float,
+                DanishCulture,
+                out lon))
+        {
+            if (!double.TryParse(
+                    lonStr.Replace(',', '.'),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out lon))
+                return false;
+        }
+
+        if (lat < -90 || lat > 90 ||
+            lon < -180 || lon > 180)
             return false;
 
-        // Validate coordinate ranges
-        // Latitude: -90 to 90
-        // Longitude: -180 to 180
-        if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
-            return false;
-
-        // Reject zero coordinates
-        if (Math.Abs(lat) < 0.0001 && Math.Abs(lon) < 0.0001)
+        if (Math.Abs(lat) < 0.0001 &&
+            Math.Abs(lon) < 0.0001)
             return false;
 
         return true;
     }
 
-    /// <summary>
-    /// Save all generated polygons to database
-    /// </summary>
-    private async Task SavePolygonsAsync(List<JobPolygon> polygons)
+    private async Task SavePolygonsAsync(
+        List<JobPolygon> polygons)
     {
         try
         {
-            // Clear existing polygons for fresh generation
-            var existingPolygons = await _context.JobPolygons.ToListAsync();
-            _context.JobPolygons.RemoveRange(existingPolygons);
+            var existing =
+                await _context.JobPolygons.ToListAsync();
 
-            // Add new polygons
+            _context.JobPolygons.RemoveRange(existing);
+
             _context.JobPolygons.AddRange(polygons);
-            var savedCount = await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Saved {Count} polygons to database", savedCount);
+            await _context.SaveChangesAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error saving polygons to database");
+            _logger.LogError(ex,
+                "Error saving polygons");
             throw;
         }
     }

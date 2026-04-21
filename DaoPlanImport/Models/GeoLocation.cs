@@ -27,15 +27,7 @@ public class GeoLocation
 /// <summary>
 /// Represents a geographical location vertex for triangulation
 /// </summary>
-public class GeoLocationVertex
-{
-    public double[] Position { get; set; }
 
-    public GeoLocationVertex(double latitude, double longitude)
-    {
-        Position = new[] { latitude, longitude };
-    }
-}
 
 /// <summary>
 /// Represents a line segment between two locations
