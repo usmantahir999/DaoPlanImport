@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 // Build configuration
 var configuration = new ConfigurationBuilder()
@@ -120,7 +121,10 @@ using (var scope = serviceProvider.CreateScope())
         // Run import service
         logger.LogInformation("Starting CSV import service");
         var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
+        Stopwatch stopwatch = Stopwatch.StartNew();
         await importService.ProcessAllDataAsync();
+        stopwatch.Stop();       
+        Console.WriteLine($"Total processing time: {stopwatch.Elapsed.TotalSeconds} seconds");
 
         logger.LogInformation("Application completed successfully");
         Console.ReadLine();
