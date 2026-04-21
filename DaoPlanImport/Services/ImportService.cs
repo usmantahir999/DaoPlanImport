@@ -55,7 +55,7 @@ public class ImportService : IImportService
             _logger.LogInformation("Extracted folder: {ExtractedFolderPath}", _extractedFolderPath);
             _logger.LogInformation("Batch size: {BatchSize}", _batchSize);
 
-            // Extract all ZIP files
+            // First, extract and process all ZIP files
             var extractedPaths = await _zipExtractor.ExtractAllZipsAsync(_baseFolderPath, _extractedFolderPath);
             _logger.LogInformation("Extraction complete. Found {ExtractedCount} folders to process", extractedPaths.Count());
 
@@ -77,6 +77,9 @@ public class ImportService : IImportService
                     }
                 }
             }
+
+            // Finally, process CSV files directly in the base folder
+            await ProcessBasefolderCsvFilesAsync(_baseFolderPath);
 
             _logger.LogInformation("Data import process completed successfully");
         }
@@ -105,8 +108,17 @@ public class ImportService : IImportService
         try
         {
             // Process all CSV files and dump them into Liga table with FileName segregation
+            // Skip files with 0 KB size
             foreach (var csvFile in csvFiles.Where(x=>x.Contains("_Liga")))
             {
+                // Check file size - skip 0 KB files
+                var fileInfo = new FileInfo(csvFile);
+                if (fileInfo.Length == 0)
+                {
+                    _logger.LogWarning("Skipping empty CSV file (0 KB): {FileName}", Path.GetFileName(csvFile));
+                    continue;
+                }
+
                 await ProcessCsvFileAsync(csvFile);
             }
             
@@ -115,6 +127,46 @@ public class ImportService : IImportService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing folder: {ExtractedPath}", extractedPath);
+        }
+    }
+
+    private async Task ProcessBasefolderCsvFilesAsync(string baseFolderPath)
+    {
+        _logger.LogInformation("Processing CSV files in base folder: {BaseFolderPath}", baseFolderPath);
+
+        // Get all CSV files directly in the base folder
+        var csvFiles = Directory.GetFiles(baseFolderPath, "*.csv", SearchOption.TopDirectoryOnly);
+
+        if (csvFiles.Length == 0)
+        {
+            _logger.LogInformation("No CSV files found in base folder");
+            return;
+        }
+
+        _logger.LogInformation("Found {CsvFileCount} CSV files to process in base folder", csvFiles.Length);
+
+        try
+        {
+            // Process all CSV files with Liga in the filename (e.g., E_MATR_12032026_175934_Liga.csv)
+            // Skip files with 0 KB size
+            foreach (var csvFile in csvFiles.Where(x => x.Contains("_Liga", StringComparison.OrdinalIgnoreCase)))
+            {
+                // Check file size - skip 0 KB files
+                var fileInfo = new FileInfo(csvFile);
+                if (fileInfo.Length == 0)
+                {
+                    _logger.LogWarning("Skipping empty CSV file (0 KB): {FileName}", Path.GetFileName(csvFile));
+                    continue;
+                }
+
+                await ProcessCsvFileAsync(csvFile);
+            }
+
+            _logger.LogInformation("Base folder CSV processing completed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing CSV files in base folder: {BaseFolderPath}", baseFolderPath);
         }
     }
 

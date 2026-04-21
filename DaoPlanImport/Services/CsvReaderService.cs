@@ -28,6 +28,14 @@ public class CsvReaderService : ICsvReaderService
             yield break;
         }
 
+        // Skip empty files (0 KB)
+        var fileInfo = new FileInfo(filePath);
+        if (fileInfo.Length == 0)
+        {
+            _logger.LogWarning("Skipping empty CSV file (0 KB): {FilePath}", filePath);
+            yield break;
+        }
+
         using var reader = new StreamReader(filePath, Encoding.GetEncoding("ISO-8859-1"));
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
