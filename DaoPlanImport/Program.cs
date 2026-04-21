@@ -123,7 +123,7 @@ using (var scope = serviceProvider.CreateScope())
         logger.LogInformation("Starting CSV import service");
         var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
         Stopwatch stopwatch = Stopwatch.StartNew();
-        //await importService.ProcessAllDataAsync();
+        await importService.ProcessAllDataAsync();
         stopwatch.Stop();       
         Console.WriteLine($"Total CSV import time: {stopwatch.Elapsed.TotalSeconds:F2} seconds");
 

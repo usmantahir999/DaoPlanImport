@@ -64,12 +64,10 @@ public class MigrationHelper
 
             // Check if database exists
             var canConnect = await _context.Database.CanConnectAsync();
-            
+
             if (!canConnect)
             {
-                _logger.LogInformation("Database doesn't exist. Creating...");
-                await _context.Database.EnsureCreatedAsync();
-                _logger.LogInformation("Database created successfully");
+                _logger.LogInformation("Database doesn't exist. It will be created by migrations.");
             }
             else
             {
