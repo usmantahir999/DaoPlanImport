@@ -74,8 +74,8 @@ public class DataMapperService : IDataMapperService
                 JOBADRNR = GetStringValue(record, "JOBADRNR"),
                 HUSN_ID = GetStringValue(record, "HUSN_ID"),
                 SOURCE = GetStringValue(record, "SOURCE"),
-                LONG = GetStringValue(record, "LONG"),
-                LAT = GetStringValue(record, "LAT"),
+                LONG = NormalizeCoordinate(GetStringValue(record, "LONG")),
+                LAT = NormalizeCoordinate(GetStringValue(record, "LAT")),
                 RECEIPT = GetStringValue(record, "RECEIPT"),
                 LIGA_ID = GetStringValue(record, "LIGA_ID"),
                 BARCODE = GetStringValue(record, "BARCODE"),
@@ -132,5 +132,18 @@ public class DataMapperService : IDataMapperService
             mapping[key] = key;
         }
         return mapping;
+    }
+
+    private string? NormalizeCoordinate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        value = value.Trim();
+
+        // Replace Danish comma with dot
+        value = value.Replace(',', '.');
+
+        return value;
     }
 }
