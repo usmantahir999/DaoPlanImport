@@ -46,9 +46,11 @@ services.AddScoped<MigrationHelper>();
 
 // Get configuration values
 var baseFolderPath = configuration["Settings:BaseFolderPath"] ?? "West_12_till_19";
+var geometryFolderPath = configuration["Settings:GeometryFolderPath"] ?? "DiomGeometries";
 var extractedFolderPath = configuration["Settings:ExtractedFolderPath"] ?? "Extracted";
 var batchSize = int.Parse(configuration["Settings:BatchSize"] ?? "500");
 var deleteExtractedAfterProcessing = bool.Parse(configuration["Settings:DeleteExtractedAfterProcessing"] ?? "false");
+
 
 // Convert relative paths to absolute paths based on solution root
 // AppContext.BaseDirectory = bin\Debug\net8.0\
@@ -67,6 +69,12 @@ var absoluteExtractedFolderPath = Path.IsPathRooted(extractedFolderPath)
 // Normalize paths
 absoluteBaseFolderPath = Path.GetFullPath(absoluteBaseFolderPath);
 absoluteExtractedFolderPath = Path.GetFullPath(absoluteExtractedFolderPath);
+
+var absoluteGeometryFolderPath = Path.IsPathRooted(geometryFolderPath)
+    ? geometryFolderPath
+    : Path.Combine(projectRoot, geometryFolderPath);
+
+absoluteGeometryFolderPath = Path.GetFullPath(absoluteGeometryFolderPath);
 
 // Register ImportService with configuration BEFORE building service provider
 services.AddScoped<IImportService>(provider =>
@@ -123,7 +131,7 @@ using (var scope = serviceProvider.CreateScope())
         logger.LogInformation("Starting CSV import service");
         var importService = scope.ServiceProvider.GetRequiredService<IImportService>();
         Stopwatch stopwatch = Stopwatch.StartNew();
-        await importService.ProcessAllDataAsync();
+        //await importService.ProcessAllDataAsync();
         stopwatch.Stop();       
         Console.WriteLine($"Total CSV import time: {stopwatch.Elapsed.TotalSeconds:F2} seconds");
 
@@ -131,9 +139,18 @@ using (var scope = serviceProvider.CreateScope())
         logger.LogInformation("Starting job polygon generation");
         var polygonService = scope.ServiceProvider.GetRequiredService<IJobPolygonService>();
         Stopwatch polygonStopwatch = Stopwatch.StartNew();
-        await polygonService.GenerateJobPolygonsAsync();
+        //await polygonService.GenerateJobPolygonsAsync();
         polygonStopwatch.Stop();
         Console.WriteLine($"Total polygon generation time: {polygonStopwatch.Elapsed.TotalSeconds:F2} seconds");
+        // Add DIOMNR to GeoJSON
+        logger.LogInformation("Starting DIOMNR enrichment for GeoJSON");
+
+        var inputPath = Path.Combine(absoluteGeometryFolderPath, "jobGeometry.json");
+        var outputPath = Path.Combine(absoluteGeometryFolderPath, "jobGeometry_with_diom.json");
+
+        await polygonService.AddDiomNrToGeoJsonAsync(inputPath, outputPath);
+
+        logger.LogInformation("DIOMNR enrichment completed");
 
         logger.LogInformation("Application completed successfully");
         Console.ReadLine();

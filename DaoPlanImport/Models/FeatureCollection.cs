@@ -15,8 +15,8 @@
 
     public class Properties
     {
-        public string JobNr { get; set; }
         public string? DiomNr { get; set; }   // <- add this
+        public string JobNr { get; set; }
     }
 
     public class Geometry

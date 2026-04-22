@@ -1,14 +1,17 @@
 using DaoPlanImport.Data;
 using DaoPlanImport.Entities;
+using DaoPlanImport.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Algorithm.Hull;
 using NetTopologySuite.IO;
 using System.Globalization;
+using System.Text.Json;
 
 public interface IJobPolygonService
 {
     Task GenerateJobPolygonsAsync();
+    Task AddDiomNrToGeoJsonAsync(string inputPath, string outputPath);
 }
 public class JobPolygonService : IJobPolygonService
 {
@@ -262,6 +265,82 @@ public class JobPolygonService : IJobPolygonService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving polygons");
+            throw;
+        }
+    }
+
+
+    public async Task AddDiomNrToGeoJsonAsync(string inputPath, string outputPath)
+    {
+        try
+        {
+            _logger.LogInformation("Starting DIOMNR enrichment for GeoJSON");
+
+            // 1. Read file
+            var json = await File.ReadAllTextAsync(inputPath);
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var featureCollection = JsonSerializer.Deserialize<FeatureCollection>(json, options);
+
+            if (featureCollection == null || featureCollection.Features == null || !featureCollection.Features.Any())
+            {
+                _logger.LogWarning("GeoJSON is empty or invalid");
+                return;
+            }
+
+            // 2. Extract job numbers
+            var jobNumbers = featureCollection.Features
+                .Where(f => f?.Properties?.JobNr != null)
+                .Select(f => f.Properties.JobNr)
+                .Distinct()
+                .ToList();
+
+            _logger.LogInformation("Found {Count} unique job numbers", jobNumbers.Count);
+
+            // 3. Fetch DIOMNR mapping (single DB call)
+            var jobDiomMap = await _context.Ligas
+                .AsNoTracking()
+                .Where(x => jobNumbers.Contains(x.JOBNR))
+                .GroupBy(x => x.JOBNR)
+                .Select(g => new
+                {
+                    JobNr = g.Key,
+                    DiomNr = g.Select(x => x.DIOMNR).FirstOrDefault()
+                })
+                .ToDictionaryAsync(x => x.JobNr, x => x.DiomNr);
+
+            _logger.LogInformation("Fetched DIOMNR mapping from DB");
+
+            // 4. Inject DIOMNR into JSON
+            foreach (var feature in featureCollection.Features)
+            {
+                if (feature?.Properties?.JobNr == null)
+                    continue;
+
+                if (jobDiomMap.TryGetValue(feature.Properties.JobNr, out var diomNr))
+                {
+                    feature.Properties.DiomNr = diomNr;
+                }
+            }
+
+            // 5. Save updated JSON
+            var updatedJson = JsonSerializer.Serialize(featureCollection, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            await File.WriteAllTextAsync(outputPath, updatedJson);
+
+            _logger.LogInformation("GeoJSON updated successfully with DIOMNR");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while adding DIOMNR to GeoJSON");
             throw;
         }
     }
