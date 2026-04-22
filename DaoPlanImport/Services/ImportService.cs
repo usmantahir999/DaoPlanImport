@@ -50,33 +50,33 @@ public class ImportService : IImportService
     {
         try
         {
-            //_logger.LogInformation("Starting data import process");
-            //_logger.LogInformation("Base folder: {BaseFolderPath}", _baseFolderPath);
-            //_logger.LogInformation("Extracted folder: {ExtractedFolderPath}", _extractedFolderPath);
-            //_logger.LogInformation("Batch size: {BatchSize}", _batchSize);
+            _logger.LogInformation("Starting data import process");
+            _logger.LogInformation("Base folder: {BaseFolderPath}", _baseFolderPath);
+            _logger.LogInformation("Extracted folder: {ExtractedFolderPath}", _extractedFolderPath);
+            _logger.LogInformation("Batch size: {BatchSize}", _batchSize);
 
-            //// First, extract and process all ZIP files
-            //var extractedPaths = await _zipExtractor.ExtractAllZipsAsync(_baseFolderPath, _extractedFolderPath);
-            //_logger.LogInformation("Extraction complete. Found {ExtractedCount} folders to process", extractedPaths.Count());
+            // First, extract and process all ZIP files
+            var extractedPaths = await _zipExtractor.ExtractAllZipsAsync(_baseFolderPath, _extractedFolderPath);
+            _logger.LogInformation("Extraction complete. Found {ExtractedCount} folders to process", extractedPaths.Count());
 
-            //// Process each extracted folder
-            //foreach (var extractedPath in extractedPaths)
-            //{
-            //    await ProcessExtractedFolderAsync(extractedPath);
+            // Process each extracted folder
+            foreach (var extractedPath in extractedPaths)
+            {
+                await ProcessExtractedFolderAsync(extractedPath);
 
-            //    if (_deleteExtractedAfterProcessing)
-            //    {
-            //        try
-            //        {
-            //            Directory.Delete(extractedPath, recursive: true);
-            //            _logger.LogInformation("Deleted extracted folder: {ExtractedPath}", extractedPath);
-            //        }
-            //        catch (Exception ex)
-            //        {
-            //            _logger.LogWarning(ex, "Failed to delete extracted folder: {ExtractedPath}", extractedPath);
-            //        }
-            //    }
-            //}
+                if (_deleteExtractedAfterProcessing)
+                {
+                    try
+                    {
+                        Directory.Delete(extractedPath, recursive: true);
+                        _logger.LogInformation("Deleted extracted folder: {ExtractedPath}", extractedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete extracted folder: {ExtractedPath}", extractedPath);
+                    }
+                }
+            }
 
             // Finally, process CSV files directly in the base folder
             await ProcessBasefolderCsvFilesAsync(_baseFolderPath);
